@@ -53,6 +53,30 @@ Run it:
 python run.py
 ```
 
+## Deploying on Railway
+
+`railway.json` pins the start command to `python run.py` and `.python-version`
+pins Python 3.12, so Railway/Nixpacks doesn't need to guess either. There's
+no HTTP server here (the bot runs a Telegram long-poll loop), so don't
+generate a public domain for the service - it doesn't serve anything.
+
+Add these variables in the Railway service's **Variables** tab (same values
+as your local `.env`):
+
+| Variable | Required | Notes |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | yes | from BotFather |
+| `OPENAI_API_KEY` | yes | needs access to a vision-capable model |
+| `OPENAI_VISION_MODEL` | no | defaults to `gpt-4o` |
+| `UPLOAD_POST_API_KEY` | yes | from upload-post.com |
+| `UPLOAD_POST_PROFILE` | yes | the Upload-Post profile to publish through |
+| `POST_ALLOWED_USER_IDS` | no | comma-separated Telegram user ids; blank = unrestricted |
+
+Deploy, then check the service logs for `Application started` to confirm it
+connected. Since Telegram only allows one process to poll a given bot token
+at a time, make sure no local `python run.py` is still running against the
+same `TELEGRAM_BOT_TOKEN` once the Railway deployment is live.
+
 ## How review works
 
 Every image gets its own in-memory "draft" identified by a random id baked
