@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+storage/temp/*
+!storage/temp/.gitkeep
+bot.log
