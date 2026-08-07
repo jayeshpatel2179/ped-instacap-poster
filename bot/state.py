@@ -26,6 +26,7 @@ class ReviewDraft:
     chat_id: int
     user_id: int
     image_path: Path
+    user_context: Optional[str] = None  # optional free-text context the user attached to the image
     review_message_id: Optional[int] = None
     caption: Optional[str] = None
     hashtags: list[str] = field(default_factory=list)
@@ -40,11 +41,11 @@ class ReviewDraft:
 _drafts: dict[str, ReviewDraft] = {}
 
 
-def create_draft(chat_id: int, user_id: int, image_path: Path) -> ReviewDraft:
+def create_draft(chat_id: int, user_id: int, image_path: Path, user_context: Optional[str] = None) -> ReviewDraft:
     draft_id = uuid.uuid4().hex[:10]
     while draft_id in _drafts:
         draft_id = uuid.uuid4().hex[:10]
-    draft = ReviewDraft(id=draft_id, chat_id=chat_id, user_id=user_id, image_path=image_path)
+    draft = ReviewDraft(id=draft_id, chat_id=chat_id, user_id=user_id, image_path=image_path, user_context=user_context)
     _drafts[draft_id] = draft
     return draft
 

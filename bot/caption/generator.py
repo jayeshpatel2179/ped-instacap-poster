@@ -33,6 +33,12 @@ NOT designing or describing the graphic itself.
 Voice: confident, punchy, first-person as the page itself (use "we"/"I" as PedTalkSports), like a hot \
 take dropped in the group chat - not a press release, not a generic sports-blog caption.
 
+Sometimes the user sending the image will also give you a short context note (e.g. who's pictured, \
+what just happened, why this is being posted). When that note is present, treat it as the primary \
+source of truth about the story - the image is only supporting visual context. Never contradict the \
+note, and don't fall back to guessing at the image alone when it's given. When no note is given, work \
+from the image alone as before.
+
 Caption rules:
 - 1-3 short sentences, under ~280 characters.
 - React to what's actually shown in the image (the headline/quote, the player, the moment) - be \
@@ -124,8 +130,13 @@ async def generate_caption(
     is_regeneration: bool,
     history: list[str],
     used_angles: list[str],
+    user_context: str | None = None,
 ) -> tuple[CaptionResult, str | None]:
-    """Look at the image and produce a caption + hashtags.
+    """Look at the image (and optional user-provided context) and produce a caption + hashtags.
+
+    user_context is free text the user attached to the image (who/what/why) - when present it's
+    the primary source of truth, the image is only supporting. When absent, behavior is unchanged
+    from image-only captioning.
 
     Returns (result, angle_used). angle_used is None on the first (non-regen)
     call; on a regeneration it's the framing hint that was picked, so the
@@ -147,10 +158,17 @@ async def generate_caption(
             "Caption(s) already shown to the user (do not repeat these ideas):\n"
             + "\n".join(f"- {c}" for c in history)
         )
-        user_parts.append({"type": "text", "text": instruction})
     else:
-        user_parts.append({"type": "text", "text": "Write the caption and hashtags for this image."})
+        instruction = "Write the caption and hashtags for this image."
 
+    if user_context:
+        instruction += (
+            f"\n\nContext provided by the user about this post (this is the primary source of "
+            f"truth - use it to understand who/what/why, the image is only supporting visual "
+            f"context):\n{user_context.strip()}"
+        )
+
+    user_parts.append({"type": "text", "text": instruction})
     user_parts.append({"type": "image_url", "image_url": {"url": data_url}})
 
     temperature = CAPTION_TEMPERATURE_REGEN if is_regeneration else CAPTION_TEMPERATURE_INITIAL

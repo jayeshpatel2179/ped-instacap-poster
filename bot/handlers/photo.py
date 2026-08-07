@@ -27,18 +27,26 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     image_path = await save_telegram_file(tg_file, chat.id, suffix)
+    user_context = (message.caption or "").strip() or None
 
-    draft = state.create_draft(chat_id=chat.id, user_id=user.id, image_path=image_path)
+    draft = state.create_draft(chat_id=chat.id, user_id=user.id, image_path=image_path, user_context=user_context)
     state.schedule_expiry_cleanup(context.application, draft.id)
 
-    status_msg = await message.reply_text("🤖 Looking at the image and writing a caption...")
+    status_text = (
+        "🤖 Looking at the image and your note, writing a caption..."
+        if user_context
+        else "🤖 Looking at the image and writing a caption..."
+    )
+    status_msg = await message.reply_text(status_text)
 
     context.application.create_task(_produce_first_caption(context, draft, status_msg.message_id))
 
 
 async def _produce_first_caption(context, draft: "state.ReviewDraft", status_message_id: int) -> None:
     try:
-        result, _angle = await generate_caption(draft.image_path, is_regeneration=False, history=[], used_angles=[])
+        result, _angle = await generate_caption(
+            draft.image_path, is_regeneration=False, history=[], used_angles=[], user_context=draft.user_context
+        )
     except CaptionGenerationError:
         logger.exception("Initial caption generation failed for draft %s", draft.id)
         async with draft.lock:

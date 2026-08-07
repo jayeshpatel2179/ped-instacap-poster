@@ -4,8 +4,14 @@ Telegram bot for PedTalkSports. Send it an already-finished Instagram post
 graphic (headline, player photo, footer already designed) and it:
 
 1. Looks at the image with a vision model and writes an Instagram caption in
-   PedTalks' voice.
-2. Picks 2-4 lowercase SEO hashtags based on what's actually in the image.
+   PedTalks' voice. If you attach a short text caption to the photo message
+   itself (who/what/why - e.g. "Messi training ahead of Saturday's derby"),
+   the bot treats that as the primary source of truth and the image as
+   supporting context - this matters most for plain photos (a training shot,
+   a portrait) that have no on-image text to read the story from. No caption
+   attached = the bot works from the image alone, exactly as before.
+2. Picks 2-4 lowercase SEO hashtags based on what's actually in the image
+   (and your note, if you gave one).
 3. Sends the image back with the caption + hashtags and three buttons:
    **✅ Confirm & Post**, **🔄 Regenerate**, **❌ Cancel**.
 4. Regenerate can be tapped repeatedly for a genuinely different caption/
@@ -85,6 +91,10 @@ people posting images in the same group at the same moment never cross wires,
 even if they're all mid-review simultaneously. A draft expires after 30
 minutes if nobody taps a button; the temp image file is cleaned up either way
 (cancelled, posted, or expired).
+
+If you attached a text note to the photo, it's stored on that same draft and
+reused for every Regenerate tap too, so the story stays consistent across
+rewrites - only the wording/angle changes.
 
 If posting to Instagram fails (network/API error), the bot edits the message
 to show the error and restores the Confirm/Regenerate/Cancel buttons with the

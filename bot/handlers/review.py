@@ -35,6 +35,16 @@ def _with_note(text: str, note: str | None) -> str:
     return f"{note}\n\n{text}" if note else text
 
 
+def _context_prefix(draft: "state.ReviewDraft") -> str:
+    """Reminder of the user-supplied context shown above the review preview - never posted to Instagram."""
+    return f"📝 Using your context: {draft.user_context}\n\n" if draft.user_context else ""
+
+
+def _for_review(draft: "state.ReviewDraft", note: str | None = None) -> str:
+    """Preview text shown in Telegram - adds a context reminder on top, never posted to Instagram."""
+    return _context_prefix(draft) + _with_note(build_preview_text(draft.caption, draft.hashtags), note)
+
+
 def _ready_keyboard(draft_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -86,7 +96,7 @@ async def present_result(context, draft: "state.ReviewDraft", placeholder_messag
         msg = await context.bot.send_photo(
             chat_id=draft.chat_id,
             photo=fh,
-            caption=build_preview_text(draft.caption, draft.hashtags),
+            caption=_for_review(draft),
             reply_markup=_ready_keyboard(draft.id),
             reply_to_message_id=None,
         )
@@ -154,6 +164,7 @@ async def _do_regenerate(context, draft: "state.ReviewDraft", had_previous: bool
             is_regeneration=True,
             history=draft.history[-CAPTION_HISTORY_LIMIT:],
             used_angles=draft.used_angles,
+            user_context=draft.user_context,
         )
     except CaptionGenerationError:
         logger.exception("Caption regeneration failed for draft %s", draft.id)
@@ -163,7 +174,7 @@ async def _do_regenerate(context, draft: "state.ReviewDraft", had_previous: bool
             await _safe_edit_caption(
                 context,
                 draft,
-                _with_note(build_preview_text(draft.caption, draft.hashtags), "⚠️ Regeneration failed - showing the previous caption."),
+                _for_review(draft, "⚠️ Regeneration failed - showing the previous caption."),
                 _ready_keyboard(draft.id),
             )
         else:
@@ -178,7 +189,7 @@ async def _do_regenerate(context, draft: "state.ReviewDraft", had_previous: bool
             draft.used_angles.append(angle)
         draft.status = "ready"
 
-    await _safe_edit_caption(context, draft, build_preview_text(draft.caption, draft.hashtags), _ready_keyboard(draft.id))
+    await _safe_edit_caption(context, draft, _for_review(draft), _ready_keyboard(draft.id))
 
 
 async def on_confirm_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -220,7 +231,7 @@ async def on_confirm_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _safe_edit_caption(
             context,
             draft,
-            _with_note(build_preview_text(draft.caption, draft.hashtags), "⏳ Posting to Instagram..."),
+            _for_review(draft, "⏳ Posting to Instagram..."),
             _busy_keyboard(draft.id, "⏳ Posting..."),
         )
 
@@ -239,7 +250,8 @@ async def _do_post(context, draft: "state.ReviewDraft") -> None:
         await _safe_edit_caption(
             context,
             draft,
-            _with_note(
+            _context_prefix(draft)
+            + _with_note(
                 final_caption,
                 "⏳ Instagram is taking longer than usual to process this post. It may still go through on "
                 "their end - tap Check Status to look. I won't post it again automatically, to avoid a duplicate.",
@@ -254,7 +266,7 @@ async def _do_post(context, draft: "state.ReviewDraft") -> None:
         await _safe_edit_caption(
             context,
             draft,
-            _with_note(final_caption, f"⚠️ Posting failed: {exc}\nYour caption and hashtags are unchanged - tap Confirm & Post to try again."),
+            _context_prefix(draft) + _with_note(final_caption, f"⚠️ Posting failed: {exc}\nYour caption and hashtags are unchanged - tap Confirm & Post to try again."),
             _ready_keyboard(draft.id),
         )
         return
@@ -290,7 +302,7 @@ async def on_checkstatus_tap(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _safe_edit_caption(
             context,
             draft,
-            _with_note(final_caption, f"⚠️ Couldn't check status right now: {exc}"),
+            _context_prefix(draft) + _with_note(final_caption, f"⚠️ Couldn't check status right now: {exc}"),
             _pending_keyboard(draft.id),
         )
         return
@@ -310,7 +322,7 @@ async def on_checkstatus_tap(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _safe_edit_caption(
             context,
             draft,
-            _with_note(final_caption, f"⚠️ Posting failed: {error}\nYour caption and hashtags are unchanged - tap Confirm & Post to try again."),
+            _context_prefix(draft) + _with_note(final_caption, f"⚠️ Posting failed: {error}\nYour caption and hashtags are unchanged - tap Confirm & Post to try again."),
             _ready_keyboard(draft.id),
         )
         return
@@ -319,7 +331,7 @@ async def on_checkstatus_tap(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _safe_edit_caption(
         context,
         draft,
-        _with_note(final_caption, "⏳ Still processing on Instagram's end. Tap Check Status again in a bit."),
+        _context_prefix(draft) + _with_note(final_caption, "⏳ Still processing on Instagram's end. Tap Check Status again in a bit."),
         _pending_keyboard(draft.id),
     )
 
