@@ -5,11 +5,19 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot import state
-from bot.caption.generator import CaptionGenerationError, generate_caption
-from bot.handlers.review import present_failure, present_result
+from bot.caption.generator import SummaryGenerationError, generate_summary
+from bot.config import WEBSITE_IMAGE_MAX_BYTES, WEBSITE_IMAGE_SUFFIXES
+from bot.handlers.website import present_website_failure, present_website_result
 from bot.utils.image_utils import save_telegram_file
 
 logger = logging.getLogger(__name__)
+
+_NO_SUMMARY_TEXT = (
+    "📝 Send the photo again with a 50-60 word summary attached as the caption on the photo message "
+    "itself - I need that to post to the website and Instagram."
+)
+_BAD_FORMAT_TEXT = "⚠️ The website only accepts jpg, jpeg, png, or webp images. Please resend in one of those formats."
+_TOO_LARGE_TEXT = "⚠️ That image is over the website's 10MB limit. Please resend a smaller file."
 
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -20,44 +28,50 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if message.photo:
         tg_file = await message.photo[-1].get_file()
         suffix = ".jpg"
+        file_size = message.photo[-1].file_size
     elif message.document and (message.document.mime_type or "").startswith("image/"):
         tg_file = await message.document.get_file()
-        suffix = Path(message.document.file_name or "image.jpg").suffix or ".jpg"
+        suffix = Path(message.document.file_name or "image.jpg").suffix.lower() or ".jpg"
+        file_size = message.document.file_size
     else:
         return
 
-    image_path = await save_telegram_file(tg_file, chat.id, suffix)
-    user_context = (message.caption or "").strip() or None
+    raw_summary = (message.caption or "").strip()
+    if not raw_summary:
+        await message.reply_text(_NO_SUMMARY_TEXT)
+        return
 
-    draft = state.create_draft(chat_id=chat.id, user_id=user.id, image_path=image_path, user_context=user_context)
+    if suffix not in WEBSITE_IMAGE_SUFFIXES:
+        await message.reply_text(_BAD_FORMAT_TEXT)
+        return
+
+    if file_size and file_size > WEBSITE_IMAGE_MAX_BYTES:
+        await message.reply_text(_TOO_LARGE_TEXT)
+        return
+
+    image_path = await save_telegram_file(tg_file, chat.id, suffix)
+
+    draft = state.create_draft(chat_id=chat.id, user_id=user.id, image_path=image_path, raw_summary=raw_summary)
     state.schedule_expiry_cleanup(context.application, draft.id)
 
-    status_text = (
-        "🤖 Looking at the image and your note, writing a caption..."
-        if user_context
-        else "🤖 Looking at the image and writing a caption..."
-    )
-    status_msg = await message.reply_text(status_text)
+    status_msg = await message.reply_text("🤖 Reading your summary and polishing it for the website...")
 
-    context.application.create_task(_produce_first_caption(context, draft, status_msg.message_id))
+    context.application.create_task(_produce_first_summary(context, draft, status_msg.message_id))
 
 
-async def _produce_first_caption(context, draft: "state.ReviewDraft", status_message_id: int) -> None:
+async def _produce_first_summary(context, draft: "state.ReviewDraft", status_message_id: int) -> None:
     try:
-        result, _angle = await generate_caption(
-            draft.image_path, is_regeneration=False, history=[], used_angles=[], user_context=draft.user_context
-        )
-    except CaptionGenerationError:
-        logger.exception("Initial caption generation failed for draft %s", draft.id)
+        summary = await generate_summary(draft.image_path, draft.raw_summary, is_regeneration=False, history=[])
+    except SummaryGenerationError:
+        logger.exception("Initial summary rewrite failed for draft %s", draft.id)
         async with draft.lock:
-            draft.status = "failed"
-        await present_failure(context, draft, status_message_id)
+            draft.status = "website_failed"
+        await present_website_failure(context, draft, status_message_id)
         return
 
     async with draft.lock:
-        draft.caption = result.caption
-        draft.hashtags = result.hashtags
-        draft.history.append(result.caption)
-        draft.status = "ready"
+        draft.summary = summary
+        draft.summary_history.append(summary)
+        draft.status = "website_ready"
 
-    await present_result(context, draft, status_message_id)
+    await present_website_result(context, draft, status_message_id)

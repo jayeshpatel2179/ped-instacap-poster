@@ -1,26 +1,39 @@
 # ped-instacap-poster
 
 Telegram bot for PedTalkSports. Send it an already-finished Instagram post
-graphic (headline, player photo, footer already designed) and it:
+graphic (headline, player photo, footer already designed) **with a 50-60 word
+summary attached as the caption on the photo message** and it runs the image
+through two legs, website first then Instagram:
 
-1. Looks at the image with a vision model and writes an Instagram caption in
-   PedTalks' voice. If you attach a short text caption to the photo message
-   itself (who/what/why - e.g. "Messi training ahead of Saturday's derby"),
-   the bot treats that as the primary source of truth and the image as
-   supporting context - this matters most for plain photos (a training shot,
-   a portrait) that have no on-image text to read the story from. No caption
-   attached = the bot works from the image alone, exactly as before.
-2. Picks 2-4 lowercase SEO hashtags based on what's actually in the image
-   (and your note, if you gave one).
-3. Sends the image back with the caption + hashtags and three buttons:
-   **✅ Confirm & Post**, **🔄 Regenerate**, **❌ Cancel**.
-4. Regenerate can be tapped repeatedly for a genuinely different caption/
-   hashtag pick each time (not a reworded copy).
-5. Confirm & Post publishes to the PedTalkSports Instagram account via
+### Leg 1 - website
+
+1. Reads your draft summary and rewrites it into a clean 50-60 word version
+   (same facts/names, just polished wording), using the image only to sanity-
+   check what's already in your draft.
+2. Sends the image back with the rewritten summary and three buttons:
+   **🌐 Go Live Website**, **🔄 Regenerate**, **❌ Abort**.
+3. Go Live Website posts the image + summary to the PedTalks website via its
+   upload API.
+
+### Leg 2 - Instagram (starts automatically once the website post succeeds)
+
+4. Looks at the image with a vision model and writes an Instagram caption in
+   PedTalks' voice, using that same website summary as the primary source of
+   truth for who/what/why (the image is only supporting context).
+5. Picks 2-4 lowercase SEO hashtags based on what's actually in the image
+   and the summary.
+6. Sends the caption + hashtags back with three buttons: **🚀 Go Live
+   Instagram**, **🔄 Regenerate**, **❌ Abort**.
+7. Regenerate can be tapped repeatedly (at either leg) for a genuinely
+   different rewrite/caption each time, not a reworded copy.
+8. Go Live Instagram publishes to the PedTalkSports Instagram account via
    [Upload-Post](https://www.upload-post.com/), the same service the sibling
    `pedtalks-insta-image` bot uses for its "Go Live" feature.
 
-This bot does not generate or design images - it only writes the caption and
+Aborting at the Instagram leg does not undo the website post - only aborting
+before Go Live Website is tapped means nothing gets posted anywhere.
+
+This bot does not generate or design images - it only writes the copy and
 posts an image you already finished elsewhere.
 
 ## Setup
@@ -44,8 +57,12 @@ Fill in `.env`:
 - `OPENAI_API_KEY` - needs access to a vision-capable chat model.
 - `UPLOAD_POST_API_KEY` / `UPLOAD_POST_PROFILE` - from upload-post.com,
   pointed at the PedTalkSports Instagram profile.
+- `WEBSITE_UPLOAD_API_KEY` - the `x-api-key` value provided by the PedTalks
+  website team for `POST https://pedtalks.com/api/instagram/upload`.
+- `WEBSITE_UPLOAD_URL` - optional, defaults to
+  `https://pedtalks.com/api/instagram/upload`.
 - `POST_ALLOWED_USER_IDS` - optional. Leave blank to let anyone in the chat
-  tap Confirm & Post; set it to restrict who can actually publish.
+  tap Go Live; set it to restrict who can actually publish.
 
 **Group chat privacy mode:** if this bot runs in a group (not a 1:1 DM),
 disable privacy mode via BotFather (`/mybots` → bot → Bot Settings → Group
@@ -76,6 +93,8 @@ as your local `.env`):
 | `OPENAI_VISION_MODEL` | no | defaults to `gpt-4o` |
 | `UPLOAD_POST_API_KEY` | yes | from upload-post.com |
 | `UPLOAD_POST_PROFILE` | yes | the Upload-Post profile to publish through |
+| `WEBSITE_UPLOAD_API_KEY` | yes | `x-api-key` for the PedTalks website upload endpoint |
+| `WEBSITE_UPLOAD_URL` | no | defaults to `https://pedtalks.com/api/instagram/upload` |
 | `POST_ALLOWED_USER_IDS` | no | comma-separated Telegram user ids; blank = unrestricted |
 
 Deploy, then check the service logs for `Application started` to confirm it
@@ -90,16 +109,18 @@ into that message's button `callback_data` - not by chat/user - so several
 people posting images in the same group at the same moment never cross wires,
 even if they're all mid-review simultaneously. A draft expires after 30
 minutes if nobody taps a button; the temp image file is cleaned up either way
-(cancelled, posted, or expired).
+(aborted, posted, or expired).
 
-If you attached a text note to the photo, it's stored on that same draft and
-reused for every Regenerate tap too, so the story stays consistent across
-rewrites - only the wording/angle changes.
+A draft always carries the user's original 50-60 word draft summary
+(`raw_summary`, required on the photo's caption) and the AI-rewritten version
+(`summary`). `summary` is reused as the primary source of truth for the
+Instagram caption too, so the story stays consistent from the website post
+through to the Instagram post - only the wording/angle changes on Regenerate.
 
-If posting to Instagram fails (network/API error), the bot edits the message
-to show the error and restores the Confirm/Regenerate/Cancel buttons with the
-**same caption and hashtags already approved** - nothing is lost, no crash,
-just tap Confirm & Post again once whatever was wrong is fixed.
+If posting to the website or Instagram fails (network/API error), the bot
+edits the message to show the error and restores the same-leg buttons with
+**whatever was already approved** - nothing is lost, no crash, just tap
+Go Live again once whatever was wrong is fixed.
 
 ## Project layout
 
@@ -109,13 +130,15 @@ bot/
 ├── config.py                   # env vars + hardcoded constants
 ├── state.py                    # in-memory draft store, keyed by random id, one asyncio.Lock per draft
 ├── caption/
-│   └── generator.py            # vision call -> {caption, hashtags} JSON, regen diversity via angle hints + history
+│   └── generator.py            # vision calls -> summary rewrite JSON and {caption, hashtags} JSON
 ├── posting/
+│   ├── website_client.py       # PedTalks website upload API wrapper (image + summary, x-api-key auth)
 │   └── uploadpost_client.py    # Upload-Post SDK wrapper (same pattern as pedtalks-insta-image's go_live client)
 ├── handlers/
 │   ├── start.py                # /start, /help
-│   ├── photo.py                # entry point: photo/image-document received -> create draft -> first caption
-│   └── review.py               # Confirm/Regenerate/Cancel callback handlers + message rendering
+│   ├── photo.py                # entry point: photo/image-document + required summary -> create draft -> first rewrite
+│   ├── website.py              # website leg: Go Live Website/Regenerate/Abort callback handlers + rendering
+│   └── review.py               # Instagram leg: Go Live Instagram/Regenerate/Abort callback handlers + rendering
 └── utils/
     └── image_utils.py          # download Telegram photo/document, temp-file cleanup
 ```

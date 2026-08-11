@@ -15,6 +15,10 @@ from bot.config import (
     MIN_HASHTAGS,
     OPENAI_API_KEY,
     OPENAI_VISION_MODEL,
+    SUMMARY_TEMPERATURE_INITIAL,
+    SUMMARY_TEMPERATURE_REGEN,
+    SUMMARY_WORD_MAX,
+    SUMMARY_WORD_MIN,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,6 +83,30 @@ class CaptionResult:
 
 class CaptionGenerationError(Exception):
     """Raised when the vision model call fails or returns something unusable."""
+
+
+class SummaryGenerationError(Exception):
+    """Raised when the website-summary rewrite call fails or returns something unusable."""
+
+
+SUMMARY_SYSTEM_PROMPT = f"""You are a copy editor for PedTalkSports, a sports news/commentary brand. You'll be \
+shown a finished Instagram post graphic and a draft summary the user wrote about it. Your job is to \
+rewrite that draft into a clean, {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} word summary for the PedTalks \
+website - a straightforward, informative recap of the story, not a social caption.
+
+Rules:
+- Preserve every fact, name, number, and claim from the user's draft - do not invent, drop, or change \
+what happened. You are tightening and polishing wording/grammar/flow, not reporting new details.
+- Use the image only to sanity-check names/context already implied by the draft - never contradict the \
+draft with something you infer from the image alone.
+- Target length is {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} words. Stay in that range.
+- Neutral, clear, third-person news-recap tone - no first-person "we/I", no hot-take voice, no emoji, \
+no hashtags, no quotation marks around the whole thing.
+- Plain prose, 1-3 sentences.
+
+Respond with STRICT JSON only, no markdown fences, no commentary, exactly this shape:
+{{"summary": "..."}}
+"""
 
 
 def _encode_image(image_path: Path) -> str:
@@ -192,3 +220,75 @@ async def generate_caption(
         raise CaptionGenerationError("Model returned an empty response")
 
     return _parse_response(content), angle
+
+
+def _parse_summary_response(content: str) -> str:
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise SummaryGenerationError(f"Model returned non-JSON output: {content[:200]!r}") from exc
+
+    summary = data.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        raise SummaryGenerationError(f"Model response missing a usable summary: {data!r}")
+
+    summary = summary.strip()
+    word_count = len(summary.split())
+    if not (SUMMARY_WORD_MIN <= word_count <= SUMMARY_WORD_MAX):
+        logger.warning("Summary rewrite came back at %d words (target %d-%d): %r", word_count, SUMMARY_WORD_MIN, SUMMARY_WORD_MAX, summary)
+
+    return summary
+
+
+async def generate_summary(
+    image_path: Path,
+    raw_summary: str,
+    *,
+    is_regeneration: bool,
+    history: list[str],
+) -> str:
+    """Rewrite the user's draft summary into a {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} word website summary.
+
+    raw_summary is the user's own text, always the primary source of truth for facts; the image is
+    only used to sanity-check it. Returns the rewritten summary text.
+    """
+    data_url = _encode_image(image_path)
+
+    if is_regeneration:
+        instruction = (
+            "Rewrite the draft summary again - genuinely different wording/structure from your previous "
+            f"attempt(s) below, while preserving the same facts, staying {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} "
+            "words.\n\n"
+            "Your previous rewrite(s) (do not repeat this exact wording):\n"
+            + "\n".join(f"- {c}" for c in history)
+            + f"\n\nUser's original draft summary:\n{raw_summary.strip()}"
+        )
+    else:
+        instruction = f"User's draft summary to rewrite:\n{raw_summary.strip()}"
+
+    user_parts = [
+        {"type": "text", "text": instruction},
+        {"type": "image_url", "image_url": {"url": data_url}},
+    ]
+
+    temperature = SUMMARY_TEMPERATURE_REGEN if is_regeneration else SUMMARY_TEMPERATURE_INITIAL
+
+    try:
+        response = await _client.chat.completions.create(
+            model=OPENAI_VISION_MODEL,
+            messages=[
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {"role": "user", "content": user_parts},
+            ],
+            temperature=temperature,
+            max_tokens=250,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        raise SummaryGenerationError(f"Vision API call failed: {exc}") from exc
+
+    content = response.choices[0].message.content
+    if not content:
+        raise SummaryGenerationError("Model returned an empty response")
+
+    return _parse_summary_response(content)

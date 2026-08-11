@@ -2,12 +2,14 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 HELP_TEXT = (
-    "Send me a finished PedTalkSports Instagram graphic (as a photo or as a file for full quality) "
-    "and I'll look at it, write a caption in our voice, and pick 2-4 SEO hashtags.\n\n"
-    "You'll get it back with three buttons:\n"
-    "✅ Confirm & Post - publishes it to Instagram\n"
-    "🔄 Regenerate - tries a different caption/hashtags for the same image\n"
-    "❌ Cancel - drops it, nothing gets posted\n\n"
+    "Send the image (with a 50-60 word summary as the photo's caption) for posting on the website "
+    "and Instagram.\n\n"
+    "Here's what happens:\n"
+    "I polish your summary and send it back: 🌐 Go Live Website, 🔄 Regenerate, ❌ Abort.\n"
+    "Go Live Website posts the image + summary to the PedTalks website.\n"
+    "Once that's live, I write an Instagram caption + hashtags from that summary and ask again: "
+    "🚀 Go Live Instagram, 🔄 Regenerate, ❌ Abort.\n"
+    "Go Live Instagram publishes to the PedTalkSports Instagram account.\n\n"
     "You can tap Regenerate as many times as you like before deciding."
 )
 

@@ -18,7 +18,7 @@ from bot.utils.image_utils import cleanup
 logger = logging.getLogger(__name__)
 
 _EXPIRED_TEXT = "⌛ This review expired (30 min passed). Send the image again to post it."
-_FAILURE_TEXT = "⚠️ Couldn't write a caption for this image (AI error). Tap Retry."
+_FAILURE_TEXT = "⚠️ Couldn't write an Instagram caption for this image (AI error). Tap Retry."
 
 
 def _is_post_allowed(user_id: int) -> bool:
@@ -35,24 +35,22 @@ def _with_note(text: str, note: str | None) -> str:
     return f"{note}\n\n{text}" if note else text
 
 
-def _context_prefix(draft: "state.ReviewDraft") -> str:
-    """Reminder of the user-supplied context shown above the review preview - never posted to Instagram."""
-    return f"📝 Using your context: {draft.user_context}\n\n" if draft.user_context else ""
+_SUMMARY_PREFIX = "📝 Caption based on your website summary\n\n"
 
 
 def _for_review(draft: "state.ReviewDraft", note: str | None = None) -> str:
     """Preview text shown in Telegram - adds a context reminder on top, never posted to Instagram."""
-    return _context_prefix(draft) + _with_note(build_preview_text(draft.caption, draft.hashtags), note)
+    return _SUMMARY_PREFIX + _with_note(build_preview_text(draft.caption, draft.hashtags), note)
 
 
 def _ready_keyboard(draft_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✅ Confirm & Post", callback_data=f"capbot:confirm:{draft_id}"),
+                InlineKeyboardButton("🚀 Go Live Instagram", callback_data=f"capbot:confirm:{draft_id}"),
                 InlineKeyboardButton("🔄 Regenerate", callback_data=f"capbot:regen:{draft_id}"),
             ],
-            [InlineKeyboardButton("❌ Cancel", callback_data=f"capbot:cancel:{draft_id}")],
+            [InlineKeyboardButton("❌ Abort", callback_data=f"capbot:cancel:{draft_id}")],
         ]
     )
 
@@ -62,7 +60,7 @@ def _failed_keyboard(draft_id: str) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton("🔄 Retry", callback_data=f"capbot:regen:{draft_id}"),
-                InlineKeyboardButton("❌ Cancel", callback_data=f"capbot:cancel:{draft_id}"),
+                InlineKeyboardButton("❌ Abort", callback_data=f"capbot:cancel:{draft_id}"),
             ]
         ]
     )
@@ -85,38 +83,41 @@ async def _safe_edit_caption(context, draft: "state.ReviewDraft", text: str, rep
         logger.warning("Could not edit review message caption for draft %s", draft.id)
 
 
-async def present_result(context, draft: "state.ReviewDraft", placeholder_message_id: int) -> None:
-    """First successful caption for a fresh draft: replace the '🤖 Looking...' placeholder with the photo+caption+buttons review message."""
+async def begin_instagram_phase(context, draft: "state.ReviewDraft") -> None:
+    """Kick off the Instagram leg on the same photo message, right after the website post succeeds.
+
+    Reuses draft.summary (the AI-rewritten website summary) as the context fed into caption
+    generation, per the same "primary source of truth" contract generate_caption already supports.
+    """
+    async with draft.lock:
+        draft.phase = "instagram"
+        draft.status = "generating"
+
+    await _safe_edit_caption(
+        context,
+        draft,
+        f"✅ Posted to website!\n{draft.website_url}\n\n🤖 Now writing the Instagram caption...",
+        _busy_keyboard(draft.id, "🤖 Writing caption..."),
+    )
+
     try:
-        await context.bot.delete_message(chat_id=draft.chat_id, message_id=placeholder_message_id)
-    except TelegramError:
-        pass
-
-    with draft.image_path.open("rb") as fh:
-        msg = await context.bot.send_photo(
-            chat_id=draft.chat_id,
-            photo=fh,
-            caption=_for_review(draft),
-            reply_markup=_ready_keyboard(draft.id),
-            reply_to_message_id=None,
+        result, _angle = await generate_caption(
+            draft.image_path, is_regeneration=False, history=[], used_angles=[], user_context=draft.summary
         )
-    draft.review_message_id = msg.message_id
+    except CaptionGenerationError:
+        logger.exception("Initial Instagram caption generation failed for draft %s", draft.id)
+        async with draft.lock:
+            draft.status = "failed"
+        await _safe_edit_caption(context, draft, _FAILURE_TEXT, _failed_keyboard(draft.id))
+        return
 
+    async with draft.lock:
+        draft.caption = result.caption
+        draft.hashtags = result.hashtags
+        draft.history.append(result.caption)
+        draft.status = "ready"
 
-async def present_failure(context, draft: "state.ReviewDraft", placeholder_message_id: int) -> None:
-    try:
-        await context.bot.delete_message(chat_id=draft.chat_id, message_id=placeholder_message_id)
-    except TelegramError:
-        pass
-
-    with draft.image_path.open("rb") as fh:
-        msg = await context.bot.send_photo(
-            chat_id=draft.chat_id,
-            photo=fh,
-            caption=_FAILURE_TEXT,
-            reply_markup=_failed_keyboard(draft.id),
-        )
-    draft.review_message_id = msg.message_id
+    await _safe_edit_caption(context, draft, _for_review(draft), _ready_keyboard(draft.id))
 
 
 def _parse_draft_id(callback_data: str) -> str:
@@ -164,7 +165,7 @@ async def _do_regenerate(context, draft: "state.ReviewDraft", had_previous: bool
             is_regeneration=True,
             history=draft.history[-CAPTION_HISTORY_LIMIT:],
             used_angles=draft.used_angles,
-            user_context=draft.user_context,
+            user_context=draft.summary,
         )
     except CaptionGenerationError:
         logger.exception("Caption regeneration failed for draft %s", draft.id)
@@ -250,7 +251,7 @@ async def _do_post(context, draft: "state.ReviewDraft") -> None:
         await _safe_edit_caption(
             context,
             draft,
-            _context_prefix(draft)
+            _SUMMARY_PREFIX
             + _with_note(
                 final_caption,
                 "⏳ Instagram is taking longer than usual to process this post. It may still go through on "
@@ -266,7 +267,7 @@ async def _do_post(context, draft: "state.ReviewDraft") -> None:
         await _safe_edit_caption(
             context,
             draft,
-            _context_prefix(draft) + _with_note(final_caption, f"⚠️ Posting failed: {exc}\nYour caption and hashtags are unchanged - tap Confirm & Post to try again."),
+            _SUMMARY_PREFIX + _with_note(final_caption, f"⚠️ Posting failed: {exc}\nYour caption and hashtags are unchanged - tap Go Live Instagram to try again."),
             _ready_keyboard(draft.id),
         )
         return
@@ -302,7 +303,7 @@ async def on_checkstatus_tap(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _safe_edit_caption(
             context,
             draft,
-            _context_prefix(draft) + _with_note(final_caption, f"⚠️ Couldn't check status right now: {exc}"),
+            _SUMMARY_PREFIX + _with_note(final_caption, f"⚠️ Couldn't check status right now: {exc}"),
             _pending_keyboard(draft.id),
         )
         return
@@ -322,7 +323,7 @@ async def on_checkstatus_tap(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _safe_edit_caption(
             context,
             draft,
-            _context_prefix(draft) + _with_note(final_caption, f"⚠️ Posting failed: {error}\nYour caption and hashtags are unchanged - tap Confirm & Post to try again."),
+            _SUMMARY_PREFIX + _with_note(final_caption, f"⚠️ Posting failed: {error}\nYour caption and hashtags are unchanged - tap Go Live Instagram to try again."),
             _ready_keyboard(draft.id),
         )
         return
@@ -331,7 +332,7 @@ async def on_checkstatus_tap(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _safe_edit_caption(
         context,
         draft,
-        _context_prefix(draft) + _with_note(final_caption, "⏳ Still processing on Instagram's end. Tap Check Status again in a bit."),
+        _SUMMARY_PREFIX + _with_note(final_caption, "⏳ Still processing on Instagram's end. Tap Check Status again in a bit."),
         _pending_keyboard(draft.id),
     )
 
@@ -362,7 +363,7 @@ async def on_cancel_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         state.pop_draft(draft.id)
         cleanup(draft.image_path)
         await query.answer()
-        await _safe_edit_caption(context, draft, "❌ Cancelled - nothing was posted.", None)
+        await _safe_edit_caption(context, draft, "❌ Aborted - the website post stays live, but nothing was posted to Instagram.", None)
 
 
 async def on_noop_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
