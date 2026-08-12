@@ -20,7 +20,7 @@ UPLOAD_POST_PROFILE = _require_env("UPLOAD_POST_PROFILE")
 
 # PedTalks website upload endpoint - posted to first, before Instagram, in every flow.
 WEBSITE_UPLOAD_API_KEY = _require_env("WEBSITE_UPLOAD_API_KEY")
-WEBSITE_UPLOAD_URL = os.getenv("WEBSITE_UPLOAD_URL") or "https://pedtalks.com/api/instagram/upload"
+WEBSITE_UPLOAD_URL = os.getenv("WEBSITE_UPLOAD_URL") or "https://www.pedtalkssports.com/api/instagram/upload"
 
 # Vision-capable chat model used to read the finished graphic and write the
 # caption + hashtags. gpt-4o (not the -mini variant) for the strongest

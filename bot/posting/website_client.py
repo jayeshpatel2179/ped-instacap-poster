@@ -33,7 +33,7 @@ def _describe_exception_chain(exc: BaseException) -> str:
 async def upload_photo_to_website(image_path: Path, summary: str) -> str:
     """Publish an image (+ optional 50-60 word summary) to the PedTalks website via its upload API.
 
-    POST https://pedtalks.com/api/instagram/upload, multipart/form-data with an `image` file field
+    POST https://www.pedtalkssports.com/api/instagram/upload, multipart/form-data with an `image` file field
     and an optional `summary` text field, authenticated via the `x-api-key` header. Returns the
     published URL on success.
     """

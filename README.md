@@ -58,9 +58,9 @@ Fill in `.env`:
 - `UPLOAD_POST_API_KEY` / `UPLOAD_POST_PROFILE` - from upload-post.com,
   pointed at the PedTalkSports Instagram profile.
 - `WEBSITE_UPLOAD_API_KEY` - the `x-api-key` value provided by the PedTalks
-  website team for `POST https://pedtalks.com/api/instagram/upload`.
+  website team for `POST https://www.pedtalkssports.com/api/instagram/upload`.
 - `WEBSITE_UPLOAD_URL` - optional, defaults to
-  `https://pedtalks.com/api/instagram/upload`.
+  `https://www.pedtalkssports.com/api/instagram/upload`.
 - `POST_ALLOWED_USER_IDS` - optional. Leave blank to let anyone in the chat
   tap Go Live; set it to restrict who can actually publish.
 
@@ -94,7 +94,7 @@ as your local `.env`):
 | `UPLOAD_POST_API_KEY` | yes | from upload-post.com |
 | `UPLOAD_POST_PROFILE` | yes | the Upload-Post profile to publish through |
 | `WEBSITE_UPLOAD_API_KEY` | yes | `x-api-key` for the PedTalks website upload endpoint |
-| `WEBSITE_UPLOAD_URL` | no | defaults to `https://pedtalks.com/api/instagram/upload` |
+| `WEBSITE_UPLOAD_URL` | no | defaults to `https://www.pedtalkssports.com/api/instagram/upload` |
 | `POST_ALLOWED_USER_IDS` | no | comma-separated Telegram user ids; blank = unrestricted |
 
 Deploy, then check the service logs for `Application started` to confirm it
