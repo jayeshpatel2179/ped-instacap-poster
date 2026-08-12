@@ -15,6 +15,21 @@ class WebsiteUploadError(Exception):
     """Raised when publishing to the PedTalks website genuinely failed - nothing was posted, safe to retry."""
 
 
+def _describe_exception_chain(exc: BaseException) -> str:
+    """httpx/httpcore transport errors are often raised with an empty message, with the actually
+    useful detail (e.g. the underlying ssl.SSLError or OSError) several `__cause__` levels down.
+    Walk the whole chain so that detail always ends up in the Telegram-facing error text."""
+    parts = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        text = str(current)
+        parts.append(f"{type(current).__name__}({text})" if text else type(current).__name__)
+        current = current.__cause__ or current.__context__
+    return " <- ".join(parts)
+
+
 async def upload_photo_to_website(image_path: Path, summary: str) -> str:
     """Publish an image (+ optional 50-60 word summary) to the PedTalks website via its upload API.
 
@@ -34,11 +49,11 @@ async def upload_photo_to_website(image_path: Path, summary: str) -> str:
                     files={"image": (image_path.name, fh, mime)},
                 )
     except httpx.HTTPError as exc:
-        # httpx/httpcore transport errors (timeouts, connect/SSL failures) often carry no message in
-        # str(exc) - always include the exception type and target URL so this is diagnosable from the
-        # Telegram error text alone, without needing to cross-reference the Railway logs.
+        # httpx/httpcore transport errors (timeouts, connect/SSL failures) often carry no message on
+        # the top-level exception - the real detail is several __cause__ levels down. Walk the whole
+        # chain so this is diagnosable from the Telegram error text alone, no log cross-referencing needed.
         logger.exception("Website upload request to %s failed", WEBSITE_UPLOAD_URL)
-        raise WebsiteUploadError(f"{type(exc).__name__} calling {WEBSITE_UPLOAD_URL}: {exc or 'no further details from httpx'}") from exc
+        raise WebsiteUploadError(f"calling {WEBSITE_UPLOAD_URL}: {_describe_exception_chain(exc)}") from exc
 
     try:
         payload = response.json()
