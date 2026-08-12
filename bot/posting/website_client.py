@@ -1,9 +1,12 @@
+import logging
 import mimetypes
 from pathlib import Path
 
 import httpx
 
 from bot.config import WEBSITE_UPLOAD_API_KEY, WEBSITE_UPLOAD_URL
+
+logger = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 60.0
 
@@ -31,7 +34,11 @@ async def upload_photo_to_website(image_path: Path, summary: str) -> str:
                     files={"image": (image_path.name, fh, mime)},
                 )
     except httpx.HTTPError as exc:
-        raise WebsiteUploadError(f"Website upload request failed: {exc}") from exc
+        # httpx/httpcore transport errors (timeouts, connect/SSL failures) often carry no message in
+        # str(exc) - always include the exception type and target URL so this is diagnosable from the
+        # Telegram error text alone, without needing to cross-reference the Railway logs.
+        logger.exception("Website upload request to %s failed", WEBSITE_UPLOAD_URL)
+        raise WebsiteUploadError(f"{type(exc).__name__} calling {WEBSITE_UPLOAD_URL}: {exc or 'no further details from httpx'}") from exc
 
     try:
         payload = response.json()
