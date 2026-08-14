@@ -5,9 +5,16 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 from bot.config import LOG_LEVEL, TELEGRAM_BOT_TOKEN
 from bot.handlers.photo import on_photo
-from bot.handlers.review import on_cancel_tap, on_checkstatus_tap, on_confirm_tap, on_noop_tap, on_regen_tap
+from bot.handlers.publish import (
+    on_abort_tap,
+    on_checkstatus_tap,
+    on_golive_tap,
+    on_noop_tap,
+    on_regen_caption_tap,
+    on_regen_summary_tap,
+    on_save_tap,
+)
 from bot.handlers.start import help_command, start
-from bot.handlers.website import on_website_abort_tap, on_website_golive_tap, on_website_regen_tap
 
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -23,13 +30,12 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler((filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, on_photo))
-    application.add_handler(CallbackQueryHandler(on_website_golive_tap, pattern=r"^capbot:site_golive:"))
-    application.add_handler(CallbackQueryHandler(on_website_regen_tap, pattern=r"^capbot:site_regen:"))
-    application.add_handler(CallbackQueryHandler(on_website_abort_tap, pattern=r"^capbot:site_abort:"))
-    application.add_handler(CallbackQueryHandler(on_confirm_tap, pattern=r"^capbot:confirm:"))
-    application.add_handler(CallbackQueryHandler(on_regen_tap, pattern=r"^capbot:regen:"))
-    application.add_handler(CallbackQueryHandler(on_cancel_tap, pattern=r"^capbot:cancel:"))
+    application.add_handler(CallbackQueryHandler(on_save_tap, pattern=r"^capbot:save:"))
+    application.add_handler(CallbackQueryHandler(on_regen_summary_tap, pattern=r"^capbot:regen_summary:"))
+    application.add_handler(CallbackQueryHandler(on_regen_caption_tap, pattern=r"^capbot:regen_caption:"))
+    application.add_handler(CallbackQueryHandler(on_golive_tap, pattern=r"^capbot:golive:"))
     application.add_handler(CallbackQueryHandler(on_checkstatus_tap, pattern=r"^capbot:checkstatus:"))
+    application.add_handler(CallbackQueryHandler(on_abort_tap, pattern=r"^capbot:abort:"))
     application.add_handler(CallbackQueryHandler(on_noop_tap, pattern=r"^capbot:noop:"))
     application.add_error_handler(_error_handler)
 

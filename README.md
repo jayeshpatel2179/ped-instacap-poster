@@ -2,36 +2,31 @@
 
 Telegram bot for PedTalkSports. Send it an already-finished Instagram post
 graphic (headline, player photo, footer already designed) **with a 50-60 word
-summary attached as the caption on the photo message** and it runs the image
-through two legs, website first then Instagram:
-
-### Leg 1 - website
+summary attached as the caption on the photo message** and it walks through a
+single review-then-publish flow, reusing that one image for both platforms:
 
 1. Reads your draft summary and rewrites it into a clean 50-60 word version
    (same facts/names, just polished wording), using the image only to sanity-
-   check what's already in your draft.
-2. Sends the image back with the rewritten summary and three buttons:
-   **🌐 Go Live Website**, **🔄 Regenerate**, **❌ Abort**.
-3. Go Live Website posts the image + summary to the PedTalks website via its
-   upload API.
-
-### Leg 2 - Instagram (starts automatically once the website post succeeds)
-
-4. Looks at the image with a vision model and writes an Instagram caption in
-   PedTalks' voice, using that same website summary as the primary source of
-   truth for who/what/why (the image is only supporting context).
-5. Picks 2-4 lowercase SEO hashtags based on what's actually in the image
-   and the summary.
-6. Sends the caption + hashtags back with three buttons: **🚀 Go Live
-   Instagram**, **🔄 Regenerate**, **❌ Abort**.
-7. Regenerate can be tapped repeatedly (at either leg) for a genuinely
+   check what's already in your draft. Sends it back with two buttons:
+   **✅ Save**, **🔄 Regenerate**.
+2. Save locks the summary in (doesn't post anywhere yet) and immediately
+   writes an Instagram caption + 2-4 lowercase SEO hashtags in PedTalks'
+   voice, using that saved summary as the primary source of truth for
+   who/what/why (the image is only supporting context).
+3. Shows the summary (saved) alongside the caption + hashtags for a final
+   look, with three buttons: **🚀 Go Live**, **🔄 Regenerate**, **❌ Abort**.
+   At this stage Regenerate only rewrites the caption/hashtags - the summary
+   is already locked in.
+4. Go Live publishes to the PedTalks website and the PedTalkSports Instagram
+   account (via [Upload-Post](https://www.upload-post.com/), the same service
+   the sibling `pedtalks-insta-image` bot uses) **at the same time**. If one
+   side fails while the other succeeds, tapping Go Live again only retries
+   whichever side is still outstanding - it never double-posts a platform
+   that already went live. Abort is only available before anything has
+   posted; once either platform is live (or Instagram is mid-processing),
+   only retry/Check Status remain.
+5. Regenerate can be tapped repeatedly at either stage for a genuinely
    different rewrite/caption each time, not a reworded copy.
-8. Go Live Instagram publishes to the PedTalkSports Instagram account via
-   [Upload-Post](https://www.upload-post.com/), the same service the sibling
-   `pedtalks-insta-image` bot uses for its "Go Live" feature.
-
-Aborting at the Instagram leg does not undo the website post - only aborting
-before Go Live Website is tapped means nothing gets posted anywhere.
 
 This bot does not generate or design images - it only writes the copy and
 posts an image you already finished elsewhere.
@@ -113,14 +108,20 @@ minutes if nobody taps a button; the temp image file is cleaned up either way
 
 A draft always carries the user's original 50-60 word draft summary
 (`raw_summary`, required on the photo's caption) and the AI-rewritten version
-(`summary`). `summary` is reused as the primary source of truth for the
-Instagram caption too, so the story stays consistent from the website post
-through to the Instagram post - only the wording/angle changes on Regenerate.
+(`summary`). Once Saved, `summary` is reused as the primary source of truth
+for the Instagram caption too, so the story stays consistent from the saved
+summary through to the Instagram caption - only the wording/angle changes on
+Regenerate.
 
-If posting to the website or Instagram fails (network/API error), the bot
-edits the message to show the error and restores the same-leg buttons with
-**whatever was already approved** - nothing is lost, no crash, just tap
-Go Live again once whatever was wrong is fixed.
+Publish state is tracked as independent per-platform flags
+(`website_posted`, `instagram_posted`, `instagram_pending`), not a single
+status - so if Go Live partially fails (one platform succeeds, the other
+errors or Instagram's async worker is still processing), tapping Go Live
+again only retries whatever's still outstanding. It never double-posts a
+platform that already went live, and Instagram's "still processing"
+(`instagram_pending`) case surfaces a **🔄 Check Status** button instead of
+being retried blindly. Abort is only available before anything has posted or
+gone pending.
 
 ## Project layout
 
@@ -137,8 +138,7 @@ bot/
 ├── handlers/
 │   ├── start.py                # /start, /help
 │   ├── photo.py                # entry point: photo/image-document + required summary -> create draft -> first rewrite
-│   ├── website.py              # website leg: Go Live Website/Regenerate/Abort callback handlers + rendering
-│   └── review.py               # Instagram leg: Go Live Instagram/Regenerate/Abort callback handlers + rendering
+│   └── publish.py              # merged review flow: Save/Regenerate (summary) -> Go Live/Regenerate/Abort (caption) -> concurrent publish
 └── utils/
     └── image_utils.py          # download Telegram photo/document, temp-file cleanup
 ```

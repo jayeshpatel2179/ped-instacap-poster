@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 from bot import state
 from bot.caption.generator import SummaryGenerationError, generate_summary
 from bot.config import WEBSITE_IMAGE_MAX_BYTES, WEBSITE_IMAGE_SUFFIXES
-from bot.handlers.website import present_website_failure, present_website_result
+from bot.handlers.publish import present_summary_failure, present_summary_result
 from bot.utils.image_utils import save_telegram_file
 
 logger = logging.getLogger(__name__)
@@ -65,13 +65,13 @@ async def _produce_first_summary(context, draft: "state.ReviewDraft", status_mes
     except SummaryGenerationError:
         logger.exception("Initial summary rewrite failed for draft %s", draft.id)
         async with draft.lock:
-            draft.status = "website_failed"
-        await present_website_failure(context, draft, status_message_id)
+            draft.status = "summary_failed"
+        await present_summary_failure(context, draft, status_message_id)
         return
 
     async with draft.lock:
         draft.summary = summary
         draft.summary_history.append(summary)
-        draft.status = "website_ready"
+        draft.status = "summary_ready"
 
-    await present_website_result(context, draft, status_message_id)
+    await present_summary_result(context, draft, status_message_id)

@@ -13,17 +13,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ReviewDraft:
-    """One finished graphic moving through the website-then-Instagram posting flow.
+    """One finished graphic moving through the merged review-then-publish pipeline:
+    summary rewrite -> Save -> caption+hashtags generation -> single Go Live that publishes to
+    the website and Instagram concurrently.
 
     Keyed by a random id embedded in every button's callback_data, not by
     (chat_id, user_id) - that's what lets N people in the same group post
     images at the same second without their drafts crossing wires. Lost on
     redeploy by design; the image just needs to be re-sent if that happens
-    mid-review.
-
-    Every draft starts in phase "website" (rewrite the user's 50-60 word summary, post it to the
-    PedTalks website) and then moves to phase "instagram" (write a caption/hashtags from that same
-    summary, post to Instagram) - see bot/handlers/website.py and bot/handlers/review.py.
+    mid-review. The same image is reused for both publish targets throughout -
+    the user never has to resend it.
     """
 
     id: str
@@ -32,23 +31,36 @@ class ReviewDraft:
     image_path: Path
     raw_summary: str  # the user's own 50-60 word draft, required, primary source of truth throughout
     review_message_id: Optional[int] = None
-    phase: str = "website"  # website | instagram
+    stage: str = "summary"  # summary | caption
 
-    # Website phase (bot/handlers/website.py)
+    # Summary stage (website copy) - see bot/handlers/publish.py
     summary: Optional[str] = None  # AI-rewritten 50-60 word summary, also reused as IG caption context
     summary_history: list[str] = field(default_factory=list)  # prior rewrites, steers regens away from repeats
-    website_url: Optional[str] = None
 
-    # Instagram phase (bot/handlers/review.py)
+    # Caption stage (Instagram copy)
     caption: Optional[str] = None
     hashtags: list[str] = field(default_factory=list)
     history: list[str] = field(default_factory=list)  # prior captions, used to steer regenerations away from repeats
     used_angles: list[str] = field(default_factory=list)
+
+    # Publish outcome tracking - independent per-platform flags (not a single phase/status) so a
+    # partial Go Live failure can be retried without double-posting whichever platform already
+    # succeeded. instagram_pending covers Upload-Post's async hand-off case, distinct from a hard
+    # failure: it must not be retried automatically, only resolved via Check Status.
+    website_posted: bool = False
+    website_url: Optional[str] = None
+    instagram_posted: bool = False
+    instagram_url: Optional[str] = None
+    instagram_pending: bool = False
     upload_request_id: Optional[str] = None  # set when Upload-Post hands a post off to its async worker
 
-    # status is phase-relative:
-    #   website:   summarizing | website_ready | website_regenerating | website_posting | website_failed
-    #   instagram: generating | ready | regenerating | posting | posting_pending | posted
+    # status is stage-relative:
+    #   stage=summary: summarizing | summary_ready | summary_regenerating | summary_failed
+    #   stage=caption: generating_caption | caption_ready | caption_regenerating | caption_failed |
+    #                  posting | posted
+    # caption_ready doubles as the idle/safe-to-act state both for a fresh caption and for any
+    # post-Go-Live state that still needs follow-up (partial failure or instagram_pending) - what
+    # to show is derived from the boolean flags above at render time, not encoded into status.
     status: str = "summarizing"
     created_at: float = field(default_factory=time.monotonic)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
