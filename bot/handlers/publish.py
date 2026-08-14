@@ -541,5 +541,53 @@ async def on_abort_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await _safe_edit_caption(context, draft, "❌ Aborted - nothing was posted.", None)
 
 
+async def on_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/cancel - text-command equivalent of the ❌ Abort button, for whoever sent the photo.
+
+    No draft_id to work from (unlike every button, which carries it in callback_data), so this
+    looks up the sender's own most recent draft in this chat via state.get_latest_draft_for.
+    Works at either stage (summary or caption review) - the Abort button only appears once the
+    caption stage is reached, but there's no reason a plain command should share that limitation.
+    """
+    message = update.effective_message
+    user = update.effective_user
+    chat = update.effective_chat
+
+    draft = state.get_latest_draft_for(chat.id, user.id)
+    if draft is None:
+        await message.reply_text("Nothing to cancel right now.")
+        return
+
+    async with draft.lock:
+        if state.is_expired(draft):
+            state.pop_draft(draft.id)
+            cleanup(draft.image_path)
+            await message.reply_text("That draft already expired - nothing to cancel.")
+            return
+        if draft.status == "posting":
+            await message.reply_text("Already posting - can't cancel now.")
+            return
+        if draft.status == "posted":
+            await message.reply_text("Already posted - nothing left to cancel.")
+            return
+        if draft.website_posted or draft.instagram_posted or draft.instagram_pending:
+            posted_where = " and ".join(
+                p
+                for p, ok in (("the website", draft.website_posted), ("Instagram", draft.instagram_posted or draft.instagram_pending))
+                if ok
+            )
+            await message.reply_text(f"Already posted to {posted_where} - can't cancel, only retry what's left via the buttons.")
+            return
+        if draft.status not in ("summary_ready", "summary_failed", "caption_ready", "caption_failed"):
+            await message.reply_text("Hang on, still working on that - try again in a moment.")
+            return
+
+        state.pop_draft(draft.id)
+        cleanup(draft.image_path)
+
+    await _safe_edit_caption(context, draft, "❌ Aborted via /cancel - nothing was posted.", None)
+    await message.reply_text("Cancelled.")
+
+
 async def on_noop_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()

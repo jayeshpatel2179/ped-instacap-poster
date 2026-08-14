@@ -24,7 +24,9 @@ single review-then-publish flow, reusing that one image for both platforms:
    whichever side is still outstanding - it never double-posts a platform
    that already went live. Abort is only available before anything has
    posted; once either platform is live (or Instagram is mid-processing),
-   only retry/Check Status remain.
+   only retry/Check Status remain. `/cancel` does the same thing as Abort
+   but as a text command - drops your own most recent pending draft in that
+   chat, at either stage, with the same "nothing posted yet" restriction.
 5. Regenerate can be tapped repeatedly at either stage for a genuinely
    different rewrite/caption each time, not a reworded copy.
 
@@ -138,7 +140,7 @@ bot/
 ├── handlers/
 │   ├── start.py                # /start, /help
 │   ├── photo.py                # entry point: photo/image-document + required summary -> create draft -> first rewrite
-│   └── publish.py              # merged review flow: Save/Regenerate (summary) -> Go Live/Regenerate/Abort (caption) -> concurrent publish
+│   └── publish.py              # merged review flow (Save/Regenerate -> Go Live/Regenerate/Abort -> concurrent publish) + /cancel
 └── utils/
     └── image_utils.py          # download Telegram photo/document, temp-file cleanup
 ```

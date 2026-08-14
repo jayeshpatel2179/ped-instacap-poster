@@ -43,6 +43,15 @@ source of truth about the story - the image is only supporting visual context. N
 note, and don't fall back to guessing at the image alone when it's given. When no note is given, work \
 from the image alone as before.
 
+CRITICAL - match the note's tone and opinion, not just its facts: the note is also the source of \
+truth for the ATTITUDE to take, not only the who/what/why. If the note is critical, sarcastic, \
+mocking, angry, or otherwise negative about the subject, the caption must land the same way - keep \
+the sting, don't file it down. If it's hyped, proud, or celebratory, match that instead. Do not \
+default to a positive/supportive spin just because that's the safer or more typical sports-page \
+tone - inventing enthusiasm the note doesn't contain is as wrong as inventing a fact it doesn't \
+contain. Example: a note mocking a player's ego over a transfer should produce a caption that mocks \
+that ego, in PedTalkSports' voice - not one that celebrates the move.
+
 Caption rules:
 - 1-3 short sentences, under ~280 characters.
 - React to what's actually shown in the image (the headline/quote, the player, the moment) - be \
@@ -97,11 +106,18 @@ website - a straightforward, informative recap of the story, not a social captio
 Rules:
 - Preserve every fact, name, number, and claim from the user's draft - do not invent, drop, or change \
 what happened. You are tightening and polishing wording/grammar/flow, not reporting new details.
+- Preserve the user's tone and opinion just as strictly as the facts. If their draft is critical, \
+sarcastic, mocking, angry, or negative about the subject, the rewrite must read the same way - clean \
+up the grammar and flow, but do not launder out the attitude, and do not soften criticism into \
+neutrality or flip it into praise. If their draft is positive, hyped, or celebratory, match that \
+instead. Never default to a "safe" neutral news tone when the user's draft wasn't neutral - matching \
+their actual stance matters more than sounding like a wire report.
 - Use the image only to sanity-check names/context already implied by the draft - never contradict the \
 draft with something you infer from the image alone.
 - Target length is {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} words. Stay in that range.
-- Neutral, clear, third-person news-recap tone - no first-person "we/I", no hot-take voice, no emoji, \
-no hashtags, no quotation marks around the whole thing.
+- Third-person, no emoji, no hashtags, no quotation marks around the whole thing. Structurally still \
+reads like a recap, not a social caption - but the attitude in the wording should match the user's \
+draft, not a generic neutral register.
 - Plain prose, 1-3 sentences.
 
 Respond with STRICT JSON only, no markdown fences, no commentary, exactly this shape:
@@ -192,8 +208,9 @@ async def generate_caption(
     if user_context:
         instruction += (
             f"\n\nContext provided by the user about this post (this is the primary source of "
-            f"truth - use it to understand who/what/why, the image is only supporting visual "
-            f"context):\n{user_context.strip()}"
+            f"truth for both the facts AND the tone/opinion to take - match their stance, whether "
+            f"critical, sarcastic, mocking, angry, hyped, or celebratory; do not soften it or flip "
+            f"it positive; the image is only supporting visual context):\n{user_context.strip()}"
         )
 
     user_parts.append({"type": "text", "text": instruction})
@@ -257,8 +274,9 @@ async def generate_summary(
     if is_regeneration:
         instruction = (
             "Rewrite the draft summary again - genuinely different wording/structure from your previous "
-            f"attempt(s) below, while preserving the same facts, staying {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} "
-            "words.\n\n"
+            f"attempt(s) below, while preserving the same facts AND the same tone/opinion (if the draft is "
+            f"critical, sarcastic, or negative, stay critical/sarcastic/negative - don't drift positive or "
+            f"neutral on a reroll), staying {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} words.\n\n"
             "Your previous rewrite(s) (do not repeat this exact wording):\n"
             + "\n".join(f"- {c}" for c in history)
             + f"\n\nUser's original draft summary:\n{raw_summary.strip()}"

@@ -67,6 +67,9 @@ class ReviewDraft:
 
 
 _drafts: dict[str, ReviewDraft] = {}
+# Most recent draft id per (chat_id, user_id) - buttons never need this (draft_id travels in
+# callback_data), but /cancel is a plain text command with no draft_id to work from.
+_by_chat_user: dict[tuple[int, int], str] = {}
 
 
 def create_draft(chat_id: int, user_id: int, image_path: Path, raw_summary: str) -> ReviewDraft:
@@ -75,6 +78,7 @@ def create_draft(chat_id: int, user_id: int, image_path: Path, raw_summary: str)
         draft_id = uuid.uuid4().hex[:10]
     draft = ReviewDraft(id=draft_id, chat_id=chat_id, user_id=user_id, image_path=image_path, raw_summary=raw_summary)
     _drafts[draft_id] = draft
+    _by_chat_user[(chat_id, user_id)] = draft_id
     return draft
 
 
@@ -82,8 +86,20 @@ def get_draft(draft_id: str) -> Optional[ReviewDraft]:
     return _drafts.get(draft_id)
 
 
+def get_latest_draft_for(chat_id: int, user_id: int) -> Optional[ReviewDraft]:
+    """The most recently created draft this user started in this chat, for /cancel - a plain text
+    command has no draft_id to work from the way every inline button does."""
+    draft_id = _by_chat_user.get((chat_id, user_id))
+    return _drafts.get(draft_id) if draft_id else None
+
+
 def pop_draft(draft_id: str) -> Optional[ReviewDraft]:
-    return _drafts.pop(draft_id, None)
+    draft = _drafts.pop(draft_id, None)
+    if draft is not None:
+        key = (draft.chat_id, draft.user_id)
+        if _by_chat_user.get(key) == draft_id:
+            del _by_chat_user[key]
+    return draft
 
 
 def is_expired(draft: ReviewDraft) -> bool:

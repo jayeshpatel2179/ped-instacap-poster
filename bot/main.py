@@ -7,6 +7,7 @@ from bot.config import LOG_LEVEL, TELEGRAM_BOT_TOKEN
 from bot.handlers.photo import on_photo
 from bot.handlers.publish import (
     on_abort_tap,
+    on_cancel_command,
     on_checkstatus_tap,
     on_golive_tap,
     on_noop_tap,
@@ -29,6 +30,7 @@ def build_application() -> Application:
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("cancel", on_cancel_command))
     application.add_handler(MessageHandler((filters.PHOTO | filters.Document.IMAGE) & ~filters.COMMAND, on_photo))
     application.add_handler(CallbackQueryHandler(on_save_tap, pattern=r"^capbot:save:"))
     application.add_handler(CallbackQueryHandler(on_regen_summary_tap, pattern=r"^capbot:regen_summary:"))

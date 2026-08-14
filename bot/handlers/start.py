@@ -9,7 +9,9 @@ HELP_TEXT = (
     "Save locks the summary in (doesn't post yet) and writes the Instagram caption + hashtags from it.\n"
     "Then you'll see: 🚀 Go Live, 🔄 Regenerate, ❌ Abort.\n"
     "Go Live publishes to the website and Instagram at the same time.\n\n"
-    "You can tap Regenerate as many times as you like at either step before deciding."
+    "You can tap Regenerate as many times as you like at either step before deciding.\n\n"
+    "/cancel drops your most recent pending draft (same as tapping Abort) - works any time before "
+    "anything's actually been posted."
 )
 
 
