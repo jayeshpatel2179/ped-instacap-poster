@@ -18,6 +18,8 @@ from bot.handlers.publish import (
 from bot.handlers.start import help_command, start
 
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=LOG_LEVEL)
+# httpx logs every request URL at INFO, and Telegram URLs embed the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

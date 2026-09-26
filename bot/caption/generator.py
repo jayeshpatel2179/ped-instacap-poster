@@ -125,6 +125,45 @@ Respond with STRICT JSON only, no markdown fences, no commentary, exactly this s
 """
 
 
+_EMPTY_RESPONSE_ATTEMPTS = 2
+
+
+async def _complete_json(
+    messages: list[dict],
+    *,
+    temperature: float,
+    max_tokens: int,
+    error_cls: type[Exception],
+) -> str:
+    """Run a JSON-mode chat completion, retrying once if the model comes back with no content.
+
+    An empty content with a 200 OK is usually a refusal (message.refusal is set) or a cut-off
+    (finish_reason == "length"); both are logged so the failure is self-explanatory.
+    """
+    reason = "unknown"
+    for attempt in range(1, _EMPTY_RESPONSE_ATTEMPTS + 1):
+        try:
+            response = await _client.chat.completions.create(
+                model=OPENAI_VISION_MODEL,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+        except Exception as exc:
+            raise error_cls(f"Vision API call failed: {exc}") from exc
+
+        choice = response.choices[0]
+        if choice.message.content:
+            return choice.message.content
+
+        refusal = getattr(choice.message, "refusal", None)
+        reason = f"refusal={refusal!r}" if refusal else f"finish_reason={choice.finish_reason!r}"
+        logger.warning("Model returned empty content (attempt %d/%d): %s", attempt, _EMPTY_RESPONSE_ATTEMPTS, reason)
+
+    raise error_cls(f"Model returned an empty response ({reason})")
+
+
 def _encode_image(image_path: Path) -> str:
     mime = _MIME_BY_SUFFIX.get(image_path.suffix.lower(), "image/jpeg")
     data = base64.b64encode(image_path.read_bytes()).decode("ascii")
@@ -218,23 +257,15 @@ async def generate_caption(
 
     temperature = CAPTION_TEMPERATURE_REGEN if is_regeneration else CAPTION_TEMPERATURE_INITIAL
 
-    try:
-        response = await _client.chat.completions.create(
-            model=OPENAI_VISION_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_parts},
-            ],
-            temperature=temperature,
-            max_tokens=400,
-            response_format={"type": "json_object"},
-        )
-    except Exception as exc:
-        raise CaptionGenerationError(f"Vision API call failed: {exc}") from exc
-
-    content = response.choices[0].message.content
-    if not content:
-        raise CaptionGenerationError("Model returned an empty response")
+    content = await _complete_json(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_parts},
+        ],
+        temperature=temperature,
+        max_tokens=400,
+        error_cls=CaptionGenerationError,
+    )
 
     return _parse_response(content), angle
 
@@ -291,22 +322,14 @@ async def generate_summary(
 
     temperature = SUMMARY_TEMPERATURE_REGEN if is_regeneration else SUMMARY_TEMPERATURE_INITIAL
 
-    try:
-        response = await _client.chat.completions.create(
-            model=OPENAI_VISION_MODEL,
-            messages=[
-                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-                {"role": "user", "content": user_parts},
-            ],
-            temperature=temperature,
-            max_tokens=250,
-            response_format={"type": "json_object"},
-        )
-    except Exception as exc:
-        raise SummaryGenerationError(f"Vision API call failed: {exc}") from exc
-
-    content = response.choices[0].message.content
-    if not content:
-        raise SummaryGenerationError("Model returned an empty response")
+    content = await _complete_json(
+        [
+            {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": user_parts},
+        ],
+        temperature=temperature,
+        max_tokens=250,
+        error_cls=SummaryGenerationError,
+    )
 
     return _parse_summary_response(content)
