@@ -112,8 +112,9 @@ up the grammar and flow, but do not launder out the attitude, and do not soften 
 neutrality or flip it into praise. If their draft is positive, hyped, or celebratory, match that \
 instead. Never default to a "safe" neutral news tone when the user's draft wasn't neutral - matching \
 their actual stance matters more than sounding like a wire report.
-- Use the image only to sanity-check names/context already implied by the draft - never contradict the \
-draft with something you infer from the image alone.
+- Take every name from the user's draft. Do not try to identify anyone from their face in the image; \
+use the image only for general context (sport, setting, on-image text), and never contradict the draft \
+with something you infer from the image alone.
 - Target length is {SUMMARY_WORD_MIN}-{SUMMARY_WORD_MAX} words. Stay in that range.
 - Third-person, no emoji, no hashtags, no quotation marks around the whole thing. Structurally still \
 reads like a recap, not a social caption - but the attitude in the wording should match the user's \
@@ -134,18 +135,20 @@ async def _complete_json(
     temperature: float,
     max_tokens: int,
     error_cls: type[Exception],
+    fallback_messages: list[dict] | None = None,
 ) -> str:
     """Run a JSON-mode chat completion, retrying once if the model comes back with no content.
 
     An empty content with a 200 OK is usually a refusal (message.refusal is set) or a cut-off
-    (finish_reason == "length"); both are logged so the failure is self-explanatory.
+    (finish_reason == "length"); both are logged so the failure is self-explanatory. When
+    fallback_messages is given, the retry uses it instead (e.g. the same request without the image).
     """
     reason = "unknown"
     for attempt in range(1, _EMPTY_RESPONSE_ATTEMPTS + 1):
         try:
             response = await _client.chat.completions.create(
                 model=OPENAI_VISION_MODEL,
-                messages=messages,
+                messages=messages if attempt == 1 or fallback_messages is None else fallback_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 response_format={"type": "json_object"},
@@ -319,6 +322,9 @@ async def generate_summary(
         {"type": "text", "text": instruction},
         {"type": "image_url", "image_url": {"url": data_url}},
     ]
+    # Vision models sometimes refuse when a real person's face is in the image; the summary is a
+    # rewrite of the user's own text, so a text-only retry loses little.
+    text_only_parts = [{"type": "text", "text": instruction}]
 
     temperature = SUMMARY_TEMPERATURE_REGEN if is_regeneration else SUMMARY_TEMPERATURE_INITIAL
 
@@ -330,6 +336,10 @@ async def generate_summary(
         temperature=temperature,
         max_tokens=250,
         error_cls=SummaryGenerationError,
+        fallback_messages=[
+            {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": text_only_parts},
+        ],
     )
 
     return _parse_summary_response(content)
